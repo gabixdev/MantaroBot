@@ -21,6 +21,9 @@ import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import gnu.trove.iterator.TIntIterator;
 import gnu.trove.set.hash.TIntHashSet;
+import lavalink.client.io.Link;
+import lavalink.client.player.IPlayer;
+import lavalink.client.player.LavalinkPlayer;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.core.EmbedBuilder;
 import net.dv8tion.jda.core.Permission;
@@ -97,14 +100,14 @@ public class MusicCmds {
                 if(!handleDefaultRatelimit(rl, event.getAuthor(), event)) return;
 
                 if(content.isEmpty()) {
-                    AudioManager am = guild.getAudioManager();
+                    final Link link = MantaroBot.getInstance().getLavaLinkForGuild(event.getGuild().getId()).getLink(event.getGuild());
 
                     try {
                         VoiceChannel vc = guild.getMember(event.getAuthor()).getVoiceState().getChannel();
 
                         if(vc != guild.getMember(event.getJDA().getSelfUser()).getVoiceState().getChannel()) {
                             event.getChannel().sendMessageFormat(languageContext.get("commands.move.attempt"), EmoteReference.THINKING).queue();
-                            AudioCmdUtils.openAudioConnection(event, am, vc, languageContext);
+                            AudioCmdUtils.openAudioConnection(event, link, vc, languageContext);
                             return;
                         }
 
@@ -123,9 +126,9 @@ public class MusicCmds {
 
                 try {
                     VoiceChannel vc = event.getGuild().getVoiceChannelsByName(content, true).get(0);
-                    AudioManager am = event.getGuild().getAudioManager();
+                    final Link link = MantaroBot.getInstance().getLavaLinkForGuild(event.getGuild().getId()).getLink(event.getGuild());
 
-                    AudioCmdUtils.openAudioConnection(event, am, vc, languageContext);
+                    AudioCmdUtils.openAudioConnection(event, link, vc, languageContext);
                     event.getChannel().sendMessageFormat(languageContext.get("commands.move.success"), EmoteReference.OK, vc.getName()).queue();
                 } catch(IndexOutOfBoundsException e) {
                     event.getChannel().sendMessageFormat(languageContext.get("commands.move.vc_not_found"), EmoteReference.ERROR).queue();
@@ -239,9 +242,9 @@ public class MusicCmds {
 
                 GuildMusicManager musicManager = MantaroBot.getInstance().getAudioManager().getMusicManager(event.getGuild());
 
-                boolean paused = !musicManager.getTrackScheduler().getAudioPlayer().isPaused();
+                boolean paused = !musicManager.getTrackScheduler().getGuildPlayer().isPaused();
                 String toSend = EmoteReference.MEGA + (paused ? languageContext.get("commands.pause.paused") : languageContext.get("commands.pause.unpaused"));
-                musicManager.getTrackScheduler().getAudioPlayer().setPaused(paused);
+                musicManager.getTrackScheduler().getGuildPlayer().setPaused(paused);
                 event.getChannel().sendMessage(toSend).queue();
                 TextChannelGround.of(event).dropItemWithChance(0, 10);
             }
@@ -845,7 +848,7 @@ public class MusicCmds {
                         return;
                     }
 
-                    AudioPlayer player = MantaroBot.getInstance().getAudioManager().getMusicManager(event.getGuild()).getTrackScheduler().getAudioPlayer();
+                    LavalinkPlayer player = MantaroBot.getInstance().getAudioManager().getMusicManager(event.getGuild()).getTrackScheduler().getGuildPlayer();
 
                     if(args[0].equals("check")) {
                         event.getChannel().sendMessageFormat(
@@ -936,9 +939,10 @@ public class MusicCmds {
      */
     private void stop(GuildMessageReceivedEvent event, I18nContext lang) {
         GuildMusicManager musicManager = MantaroBot.getInstance().getAudioManager().getMusicManager(event.getGuild());
-        TrackScheduler trackScheduler = musicManager.getTrackScheduler();
-        if(trackScheduler.getAudioPlayer().getPlayingTrack() != null && !trackScheduler.getAudioPlayer().isPaused()) {
-            trackScheduler.getAudioPlayer().getPlayingTrack().stop();
+        final TrackScheduler trackScheduler = musicManager.getTrackScheduler();
+        final IPlayer audioPlayer = trackScheduler.getAudioPlayer();
+        if(audioPlayer.getPlayingTrack() != null && !audioPlayer.isPaused()) {
+            audioPlayer.getPlayingTrack().stop();
         }
 
         int TEMP_QUEUE_LENGTH = trackScheduler.getQueue().size();

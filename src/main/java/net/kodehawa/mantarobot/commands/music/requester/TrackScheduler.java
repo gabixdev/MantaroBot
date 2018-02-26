@@ -16,12 +16,13 @@
 
 package net.kodehawa.mantarobot.commands.music.requester;
 
-import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
-import com.sedmelluq.discord.lavaplayer.player.event.AudioEventAdapter;
-import com.sedmelluq.discord.lavaplayer.tools.FriendlyException;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackEndReason;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackInfo;
+import lavalink.client.io.Link;
+import lavalink.client.player.IPlayer;
+import lavalink.client.player.LavalinkPlayer;
+import lavalink.client.player.event.PlayerEventListenerAdapter;
 import lombok.Getter;
 import lombok.Setter;
 import net.dv8tion.jda.core.MessageBuilder;
@@ -41,9 +42,9 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-public class TrackScheduler extends AudioEventAdapter {
+public class TrackScheduler extends PlayerEventListenerAdapter {
     @Getter
-    private final AudioPlayer audioPlayer;
+    private final IPlayer audioPlayer;
     private final String guildId;
     @Getter
     private final ConcurrentLinkedDeque<AudioTrack> queue;
@@ -62,8 +63,12 @@ public class TrackScheduler extends AudioEventAdapter {
     private long requestedChannel;
     @Getter
     private final I18n language;
+    @Getter
+    private final Link guildLavaLink;
+    @Getter
+    private final LavalinkPlayer guildPlayer;
 
-    public TrackScheduler(AudioPlayer player, String guildId) {
+    public TrackScheduler(IPlayer player, String guildId) {
         this.audioPlayer = player;
         this.queue = new ConcurrentLinkedDeque<>();
         this.guildId = guildId;
@@ -72,15 +77,18 @@ public class TrackScheduler extends AudioEventAdapter {
 
         //Only take guild language settings into consideration for announcement messages.
         this.language = I18n.of(guildId);
+        this.guildLavaLink = MantaroBot.getInstance().getShardForGuild(guildId).getLavalink().getLink(guildId);
+        guildPlayer = guildLavaLink.getPlayer();
     }
 
     public void queue(AudioTrack track, boolean addFirst) {
-        if(!audioPlayer.startTrack(track, true)) {
+        if(guildPlayer.getPlayingTrack() != null) {
             if(addFirst)
                 queue.addFirst(track);
             else
                 queue.offer(track);
         } else {
+            guildPlayer.playTrack(track);
             currentTrack = track;
         }
     }
@@ -94,11 +102,18 @@ public class TrackScheduler extends AudioEventAdapter {
         if(repeatMode == Repeat.SONG && currentTrack != null && !force) {
             queue(currentTrack.makeClone());
         } else {
-            if(currentTrack != null) previousTrack = currentTrack;
+            if(currentTrack != null)
+                previousTrack = currentTrack;
             currentTrack = queue.poll();
-            audioPlayer.startTrack(currentTrack, !force);
-            if(skip) onTrackStart();
-            if(repeatMode == Repeat.QUEUE) queue(previousTrack.makeClone());
+
+            //todo handle noInterrupt param on lavalink?
+            guildPlayer.playTrack(currentTrack);
+            //audioPlayer.startTrack(currentTrack, !force);
+
+            if(skip)
+                onTrackStart();
+            if(repeatMode == Repeat.QUEUE)
+                queue(previousTrack.makeClone());
         }
     }
 
@@ -142,7 +157,7 @@ public class TrackScheduler extends AudioEventAdapter {
     }
 
     @Override
-    public void onTrackEnd(AudioPlayer player, AudioTrack track, AudioTrackEndReason endReason) {
+    public void onTrackEnd(IPlayer player, AudioTrack track, AudioTrackEndReason endReason) {
         if(endReason.mayStartNext) {
             nextTrack(false, false);
             onTrackStart();
@@ -150,7 +165,7 @@ public class TrackScheduler extends AudioEventAdapter {
     }
 
     @Override
-    public void onTrackException(AudioPlayer player, AudioTrack track, FriendlyException exception) {
+    public void onTrackException(IPlayer player, AudioTrack track, Exception exception) {
         if(getRequestedChannelParsed() != null && getRequestedChannelParsed().canTalk()) {
             //Avoid massive spam of when song error in mass.
             if(lastErrorSentAt == 0 || lastErrorSentAt + 10000 < System.currentTimeMillis()) {
@@ -220,11 +235,10 @@ public class TrackScheduler extends AudioEventAdapter {
                         EmoteReference.MEGA, premium ? "" : String.format(language.get("commands.music_general.premium_beg"), EmoteReference.HEART)
                 ).queue(message -> message.delete().queueAfter(30, TimeUnit.SECONDS));
             }
-        } catch(Exception ignored) {
-        }
+        } catch(Exception ignored) { }
 
         requestedChannel = 0;
-        MantaroBot.getInstance().getCore().getCommonExecutor().execute(m::closeAudioConnection);
+        guildLavaLink.disconnect();
     }
 
     public enum Repeat {

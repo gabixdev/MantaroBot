@@ -16,15 +16,12 @@
 
 package net.kodehawa.mantarobot.commands.music;
 
-import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
-import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
+import lavalink.client.player.IPlayer;
 import lombok.Getter;
 import lombok.Setter;
 import net.dv8tion.jda.core.entities.Guild;
 import net.kodehawa.mantarobot.MantaroBot;
-import net.kodehawa.mantarobot.commands.music.handlers.AudioPlayerSendHandler;
 import net.kodehawa.mantarobot.commands.music.requester.TrackScheduler;
-import net.kodehawa.mantarobot.data.I18n;
 import net.kodehawa.mantarobot.utils.commands.EmoteReference;
 
 import java.util.concurrent.ScheduledFuture;
@@ -32,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 
 public class GuildMusicManager {
     @Getter
-    public final AudioPlayer audioPlayer;
+    public final IPlayer audioPlayer;
     @Getter
     public final TrackScheduler trackScheduler;
     @Getter
@@ -40,8 +37,8 @@ public class GuildMusicManager {
     public boolean isAwaitingDeath;
     private ScheduledFuture<?> leaveTask = null;
 
-    public GuildMusicManager(AudioPlayerManager manager, String guildId) {
-        audioPlayer = manager.createPlayer();
+    public GuildMusicManager(String guildId) {
+        audioPlayer = MantaroBot.getInstance().getLavaLinkForGuild(guildId).getLink(guildId).getPlayer();
         trackScheduler = new TrackScheduler(audioPlayer, guildId);
         audioPlayer.addListener(trackScheduler);
     }
@@ -72,9 +69,5 @@ public class GuildMusicManager {
             return;
         leaveTask.cancel(true);
         leaveTask = null;
-    }
-
-    public AudioPlayerSendHandler getAudioPlayerSendHandler() {
-        return new AudioPlayerSendHandler(audioPlayer);
     }
 }

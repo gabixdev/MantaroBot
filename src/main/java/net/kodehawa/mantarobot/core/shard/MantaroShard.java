@@ -19,6 +19,7 @@ package net.kodehawa.mantarobot.core.shard;
 import br.com.brjdevs.java.utils.async.Async;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.sedmelluq.discord.lavaplayer.jdaudp.NativeAudioSendFactory;
+import lavalink.client.io.Lavalink;
 import lombok.Getter;
 import lombok.experimental.Delegate;
 import net.dv8tion.jda.core.AccountType;
@@ -46,6 +47,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.security.auth.login.LoginException;
+import java.net.URI;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Objects;
@@ -87,6 +89,8 @@ public class MantaroShard implements JDA {
     private final ExecutorService commandPool;
     @Delegate
     private JDA jda;
+    @Getter
+    private Lavalink lavalink;
 
     /**
      * Builds a new instance of a MantaroShard.
@@ -120,7 +124,6 @@ public class MantaroShard implements JDA {
         log = LoggerFactory.getLogger("MantaroShard-" + shardId);
         mantaroListener = new MantaroListener(shardId, this);
         commandListener = new CommandListener(shardId, this, commandProcessor);
-
         start(false);
     }
 
@@ -169,13 +172,20 @@ public class MantaroShard implements JDA {
             jda = jdaBuilder.buildBlocking();
         }
 
+        lavalink = new Lavalink(jda.getSelfUser().getId(), getTotalShards(), shardId -> MantaroBot.getInstance().getShard(shardId).getJDA());
+        lavalink.addNode(URI.create(config.lavalinkUrl), config.lavalinkPassword);
+
         //Assume everything is alright~
         addListeners();
     }
 
     private void addListeners() {
         log.debug("Added all listeners for shard {}", shardId);
-        jda.addEventListener(mantaroListener, commandListener, VOICE_CHANNEL_LISTENER, InteractiveOperations.listener(), ReactionOperations.listener());
+        jda.addEventListener(
+                mantaroListener, commandListener,
+                VOICE_CHANNEL_LISTENER, InteractiveOperations.listener(),
+                ReactionOperations.listener(), lavalink
+        );
     }
 
     private void removeListeners() {

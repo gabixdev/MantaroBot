@@ -78,6 +78,8 @@ public class Config {
     public String patreonAccessToken;
     //we need an actual callback url here? yikes.
     public String patreonRedirectUri = "https://mantaro.site";
+    public String lavalinkUrl;
+    public String lavalinkPassword;
 
     public boolean isOwner(Member member) {
         return isOwner(member.getUser());

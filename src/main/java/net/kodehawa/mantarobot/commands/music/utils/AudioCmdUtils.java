@@ -16,13 +16,14 @@
 
 package net.kodehawa.mantarobot.commands.music.utils;
 
+import lavalink.client.io.Link;
 import net.dv8tion.jda.core.EmbedBuilder;
 import net.dv8tion.jda.core.Permission;
 import net.dv8tion.jda.core.entities.Guild;
 import net.dv8tion.jda.core.entities.MessageEmbed;
 import net.dv8tion.jda.core.entities.VoiceChannel;
 import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent;
-import net.dv8tion.jda.core.managers.AudioManager;
+import net.kodehawa.mantarobot.MantaroBot;
 import net.kodehawa.mantarobot.commands.music.GuildMusicManager;
 import net.kodehawa.mantarobot.commands.music.requester.TrackScheduler;
 import net.kodehawa.mantarobot.core.modules.commands.i18n.I18nContext;
@@ -41,11 +42,6 @@ public class AudioCmdUtils {
     private final static String BLOCK_INACTIVE = "\u25AC";
     private final static String BLOCK_ACTIVE = "\uD83D\uDD18";
     private static final int TOTAL_BLOCKS = 10;
-
-    public static void closeAudioConnection(GuildMessageReceivedEvent event, AudioManager audioManager, I18nContext lang) {
-        audioManager.closeAudioConnection();
-        event.getChannel().sendMessageFormat(lang.get("commands.music_general.closed_connection"), EmoteReference.CORRECT).queue();
-    }
 
     public static void embedForQueue(int page, GuildMessageReceivedEvent event, GuildMusicManager musicManager, I18nContext lang) {
         final TrackScheduler trackScheduler = musicManager.getTrackScheduler();
@@ -155,14 +151,14 @@ public class AudioCmdUtils {
         }, lines);
     }
 
-    public static void openAudioConnection(GuildMessageReceivedEvent event, AudioManager audioManager, VoiceChannel userChannel, I18nContext lang) {
+    public static void openAudioConnection(GuildMessageReceivedEvent event, Link link, VoiceChannel userChannel, I18nContext lang) {
         if(userChannel.getUserLimit() <= userChannel.getMembers().size() && userChannel.getUserLimit() > 0 && !event.getGuild().getSelfMember().hasPermission(Permission.MANAGE_CHANNEL)) {
             event.getChannel().sendMessageFormat(lang.get("commands.music_general.connect.full_channel"), EmoteReference.ERROR).queue();
             return;
         }
 
         try {
-            audioManager.openAudioConnection(userChannel);
+            link.connect(userChannel);
             event.getChannel().sendMessageFormat(lang.get("commands.music_general.connect.success"), EmoteReference.CORRECT, userChannel.getName()).queue();
         } catch(NullPointerException e) {
             event.getChannel().sendMessageFormat(lang.get("commands.music_general.connect.non_existing_channel"), EmoteReference.ERROR).queue();
@@ -175,7 +171,6 @@ public class AudioCmdUtils {
 
     public static boolean connectToVoiceChannel(GuildMessageReceivedEvent event, I18nContext lang) {
         VoiceChannel userChannel = event.getMember().getVoiceState().getChannel();
-
         if(userChannel == null) {
             event.getChannel().sendMessageFormat(lang.get("commands.music_general.connect.user_no_vc"), EmoteReference.ERROR).queue();
             return false;
@@ -191,12 +186,13 @@ public class AudioCmdUtils {
             return false;
         }
 
+        DBGuild dbGuild = MantaroData.db().getGuild(event.getGuild());
         VoiceChannel guildMusicChannel = null;
-        if(MantaroData.db().getGuild(event.getGuild()).getData().getMusicChannel() != null) {
-            guildMusicChannel = event.getGuild().getVoiceChannelById(MantaroData.db().getGuild(event.getGuild()).getData().getMusicChannel());
+        if(dbGuild.getData().getMusicChannel() != null) {
+            guildMusicChannel = event.getGuild().getVoiceChannelById(dbGuild.getData().getMusicChannel());
         }
 
-        AudioManager audioManager = event.getGuild().getAudioManager();
+        final Link link = MantaroBot.getInstance().getLavaLinkForGuild(event.getGuild().getId()).getLink(event.getGuild());
 
         if(guildMusicChannel != null) {
             if(!userChannel.equals(guildMusicChannel)) {
@@ -204,26 +200,21 @@ public class AudioCmdUtils {
                 return false;
             }
 
-            if(!audioManager.isConnected() && !audioManager.isAttemptingToConnect()) {
-                audioManager.openAudioConnection(userChannel);
+            if(link.getState() == Link.State.CONNECTED && link.getState() != Link.State.CONNECTING) {
+                link.connect(userChannel);
                 event.getChannel().sendMessageFormat(lang.get("commands.music_general.connect.success"), EmoteReference.CORRECT, userChannel.getName()).queue();
             }
 
             return true;
         }
 
-        if(audioManager.isConnected() && !audioManager.getConnectedChannel().equals(userChannel)) {
-            event.getChannel().sendMessageFormat(lang.get("commands.music_general.connect.already_connected"), EmoteReference.WARNING, audioManager.getConnectedChannel().getName()).queue();
+        if(link.getState() == Link.State.CONNECTED && link.getChannel() != null && !link.getChannel().equals(userChannel)) {
+            event.getChannel().sendMessageFormat(lang.get("commands.music_general.connect.already_connected"), EmoteReference.WARNING, link.getChannel().getName()).queue();
             return false;
         }
 
-        if(audioManager.isAttemptingToConnect() && !audioManager.getQueuedAudioConnection().equals(userChannel)) {
-            event.getChannel().sendMessageFormat(lang.get("commands.music_general.connect.attempting_to_connect"), EmoteReference.ERROR, audioManager.getQueuedAudioConnection().getName()).queue();
-            return false;
-        }
-
-        if(!audioManager.isConnected() && !audioManager.isAttemptingToConnect()) {
-            openAudioConnection(event, audioManager, userChannel, lang);
+        if(link.getState() != Link.State.CONNECTED && link.getState() != Link.State.CONNECTING) {
+            openAudioConnection(event, link, userChannel, lang);
         }
 
         return true;
